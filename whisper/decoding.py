@@ -99,6 +99,11 @@ class DecodingOptions:
     prompt: Optional[Union[str, List[int]]] = None  # for the previous context
     prefix: Optional[Union[str, List[int]]] = None  # to prefix the current context
 
+    # dictionary of token ids paired with logit biases to apply
+    # a comma-separated string of the same may also be used, in the form:
+    #   example: "6342:-10,1582:-10"
+    bias_tokens: Optional[Union[str, Dict[int, float]]] = ""
+
     # list of tokens ids (or comma-separated token ids) to suppress
     # "-1" will suppress a set of symbols as defined in `tokenizer.non_speech_tokens()`
     suppress_tokens: Optional[Union[str, Iterable[int]]] = "-1"
@@ -413,6 +418,15 @@ class LogitFilter:
         raise NotImplementedError
 
 
+class BiasTokens(LogitFilter):
+    def __init__(self, bias_tokens: Dict[int, float]):
+        self.bias_tokens = bias_tokens
+
+    def apply(self, logits: Tensor, tokens: Tensor):
+        for index, value in self.bias_tokens.items():
+            logits[:, index] = value
+
+
 class SuppressBlank(LogitFilter):
     def __init__(self, tokenizer: Tokenizer, sample_begin: int):
         self.tokenizer = tokenizer
@@ -542,6 +556,8 @@ class DecodingTask:
 
         # logit filters: applies various rules to suppress or penalize certain tokens
         self.logit_filters = []
+        if self.options.bias_tokens:
+            self.logit_filters.append(BiasTokens(self._get_bias_tokens()))
         if self.options.suppress_blank:
             self.logit_filters.append(SuppressBlank(self.tokenizer, self.sample_begin))
         if self.options.suppress_tokens:
@@ -601,6 +617,19 @@ class DecodingTask:
             )
 
         return tuple(tokens)
+
+    def _get_bias_tokens(self) -> Tuple[int]:
+        bias_tokens = self.options.bias_tokens
+
+        if isinstance(bias_tokens, str):
+            bias_tokens = {int(k): float(v) for k, v in (pair.split(":") for pair in bias_tokens.split(","))}
+
+        if bias_tokens is None:
+            bias_tokens = {}
+        else:
+            assert isinstance(bias_tokens, dict), "bias_tokens must be a dict"
+
+        return bias_tokens
 
     def _get_suppress_tokens(self) -> Tuple[int]:
         suppress_tokens = self.options.suppress_tokens
