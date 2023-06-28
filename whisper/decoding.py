@@ -618,16 +618,20 @@ class DecodingTask:
 
         return tuple(tokens)
 
-    def _get_bias_tokens(self) -> Tuple[int]:
+    def _get_bias_tokens(self) -> Dict[int, float]:
         bias_tokens = self.options.bias_tokens
 
         if isinstance(bias_tokens, str):
-            bias_tokens = {int(k): float(v) for k, v in (pair.split(":") for pair in bias_tokens.split(","))}
+            try:
+                bias_tokens = {int(k): float(v) for k, v in (pair.split(":") for pair in bias_tokens.split(","))}
+            except ValueError:
+                raise ValueError("bias_tokens string must be in 'int:float' format")
 
-        if bias_tokens is None:
+        elif bias_tokens is None:
             bias_tokens = {}
-        else:
-            assert isinstance(bias_tokens, dict), "bias_tokens must be a dict"
+
+        if not isinstance(bias_tokens, dict):
+            raise TypeError("bias_tokens must be a dict or a string in 'int:float' format")
 
         return bias_tokens
 
